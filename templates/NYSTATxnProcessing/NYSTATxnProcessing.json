@@ -1,0 +1,497 @@
+{
+	"$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+		"factoryName": {
+			"type": "string",
+			"metadata": "Data Factory name"
+		},
+		"sftplinkedsvc": {
+			"type": "string"
+		},
+		"nystalinkedsvc": {
+			"type": "string"
+		},
+		"dblinkedsvc": {
+			"type": "string"
+		}
+	},
+	"variables": {
+		"factoryId": "[concat('Microsoft.DataFactory/factories/', parameters('factoryName'))]"
+	},
+	"resources": [
+		{
+			"name": "[concat(parameters('factoryName'), '/NYSTATxnProcessing')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "readRemoteFile",
+						"type": "Copy",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "7.00:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "BinarySource",
+								"storeSettings": {
+									"type": "SftpReadSettings",
+									"recursive": true,
+									"wildcardFileName": "*.txt"
+								},
+								"formatSettings": {
+									"type": "BinaryReadSettings"
+								}
+							},
+							"sink": {
+								"type": "BinarySink",
+								"storeSettings": {
+									"type": "AzureBlobStorageWriteSettings"
+								}
+							},
+							"enableStaging": false
+						},
+						"inputs": [
+							{
+								"referenceName": "RemoteFileIn",
+								"type": "DatasetReference"
+							}
+						],
+						"outputs": [
+							{
+								"referenceName": "LocalFileIn",
+								"type": "DatasetReference"
+							}
+						]
+					},
+					{
+						"name": "getMetadata",
+						"type": "GetMetadata",
+						"dependsOn": [
+							{
+								"activity": "readRemoteFile",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "7.00:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"dataset": {
+								"referenceName": "LocalFileIn",
+								"type": "DatasetReference"
+							},
+							"fieldList": [
+								"itemName",
+								"itemType",
+								"childItems"
+							],
+							"storeSettings": {
+								"type": "AzureBlobStorageReadSettings",
+								"recursive": true
+							},
+							"formatSettings": {
+								"type": "BinaryReadSettings"
+							}
+						}
+					},
+					{
+						"name": "forEachFile",
+						"type": "ForEach",
+						"dependsOn": [
+							{
+								"activity": "getMetadata",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"items": {
+								"value": "@activity('getMetadata').output.childItems",
+								"type": "Expression"
+							},
+							"isSequential": true,
+							"activities": [
+								{
+									"name": "writeRecordsToDB",
+									"type": "ExecuteDataFlow",
+									"dependsOn": [],
+									"policy": {
+										"timeout": "7.00:00:00",
+										"retry": 0,
+										"retryIntervalInSeconds": 30,
+										"secureOutput": false,
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"dataflow": {
+											"referenceName": "writeRecordsToDB",
+											"type": "DataFlowReference",
+											"parameters": {
+												"fileNameDataFlowParam": {
+													"value": "'@{item().name}'",
+													"type": "Expression"
+												}
+											},
+											"datasetParameters": {
+												"readLocalFile": {
+													"fileName": {
+														"value": "@item().name",
+														"type": "Expression"
+													}
+												}
+											}
+										},
+										"compute": {
+											"coreCount": 8,
+											"computeType": "General"
+										}
+									}
+								},
+								{
+									"name": "archiveOnSuccess",
+									"type": "Copy",
+									"dependsOn": [
+										{
+											"activity": "writeRecordsToDB",
+											"dependencyConditions": [
+												"Succeeded"
+											]
+										}
+									],
+									"policy": {
+										"timeout": "7.00:00:00",
+										"retry": 0,
+										"retryIntervalInSeconds": 30,
+										"secureOutput": false,
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"source": {
+											"type": "BinarySource",
+											"storeSettings": {
+												"type": "AzureBlobStorageReadSettings",
+												"recursive": true
+											},
+											"formatSettings": {
+												"type": "BinaryReadSettings"
+											}
+										},
+										"sink": {
+											"type": "BinarySink",
+											"storeSettings": {
+												"type": "AzureBlobStorageWriteSettings"
+											}
+										},
+										"enableStaging": false
+									},
+									"inputs": [
+										{
+											"referenceName": "LocalFileIn",
+											"type": "DatasetReference"
+										}
+									],
+									"outputs": [
+										{
+											"referenceName": "LocalFileSuccessOut",
+											"type": "DatasetReference"
+										}
+									]
+								},
+								{
+									"name": "archiveOnFailure",
+									"type": "Copy",
+									"dependsOn": [
+										{
+											"activity": "writeRecordsToDB",
+											"dependencyConditions": [
+												"Failed"
+											]
+										}
+									],
+									"policy": {
+										"timeout": "7.00:00:00",
+										"retry": 0,
+										"retryIntervalInSeconds": 30,
+										"secureOutput": false,
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"source": {
+											"type": "BinarySource",
+											"storeSettings": {
+												"type": "AzureBlobStorageReadSettings",
+												"recursive": true
+											},
+											"formatSettings": {
+												"type": "BinaryReadSettings"
+											}
+										},
+										"sink": {
+											"type": "BinarySink",
+											"storeSettings": {
+												"type": "AzureBlobStorageWriteSettings"
+											}
+										},
+										"enableStaging": false
+									},
+									"inputs": [
+										{
+											"referenceName": "LocalFileIn",
+											"type": "DatasetReference"
+										}
+									],
+									"outputs": [
+										{
+											"referenceName": "LocalFileErrorOut",
+											"type": "DatasetReference"
+										}
+									]
+								}
+							]
+						}
+					}
+				],
+				"annotations": []
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/RemoteFileIn')]",
+				"[concat(variables('factoryId'), '/datasets/LocalFileIn')]",
+				"[concat(variables('factoryId'), '/dataflows/writeRecordsToDB')]",
+				"[concat(variables('factoryId'), '/datasets/LocalFileSuccessOut')]",
+				"[concat(variables('factoryId'), '/datasets/LocalFileErrorOut')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/RemoteFileIn')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "[parameters('sftplinkedsvc')]",
+					"type": "LinkedServiceReference"
+				},
+				"annotations": [],
+				"type": "Binary",
+				"typeProperties": {
+					"location": {
+						"type": "SftpLocation",
+						"folderPath": "/home/azureuser/nystatxnin"
+					}
+				}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/LocalFileIn')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "[parameters('nystalinkedsvc')]",
+					"type": "LinkedServiceReference"
+				},
+				"annotations": [],
+				"type": "Binary",
+				"typeProperties": {
+					"location": {
+						"type": "AzureBlobStorageLocation",
+						"folderPath": "input",
+						"container": "adfnysta"
+					}
+				}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/writeRecordsToDB')]",
+			"type": "Microsoft.DataFactory/factories/dataflows",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"type": "MappingDataFlow",
+				"typeProperties": {
+					"sources": [
+						{
+							"dataset": {
+								"referenceName": "TxnFileDataSet",
+								"type": "DatasetReference"
+							},
+							"name": "readLocalFile"
+						}
+					],
+					"sinks": [
+						{
+							"dataset": {
+								"referenceName": "TxnDBDataSet",
+								"type": "DatasetReference"
+							},
+							"name": "writeToDB"
+						}
+					],
+					"transformations": [
+						{
+							"name": "mapFileData"
+						}
+					],
+					"script": "parameters{\n\tfileNameDataFlowParam as string\n}\nsource(output(\n\t\tColumn_1 as string\n\t),\n\tallowSchemaDrift: true,\n\tvalidateSchema: false) ~> readLocalFile\nreadLocalFile derive(record_type_code = substring(Column_1, 1, 1),\n\t\ttransaction_type = substring(Column_1, 2, 1),\n\t\tetc_entry_date = substring(Column_1, 3, 8),\n\t\tetc_entry_time = substring(Column_1, 11, 8),\n\t\tetc_entry_plaza_id = substring(Column_1, 19, 3),\n\t\tetc_entry_lane = substring(Column_1, 22, 3),\n\t\tetc_entry_data_source = substring(Column_1, 25, 1),\n\t\tfile_name = $fileNameDataFlowParam) ~> mapFileData\nmapFileData sink(input(\n\t\trecord_type_code as string,\n\t\ttransaction_type as string,\n\t\tetc_entry_date as string,\n\t\tetc_entry_time as string,\n\t\tetc_entry_plaza_id as string,\n\t\tetc_entry_lane as string,\n\t\tetc_entry_data_source as string,\n\t\tFILE_NAME as string\n\t),\n\tallowSchemaDrift: true,\n\tvalidateSchema: false,\n\tdeletable:false,\n\tinsertable:true,\n\tupdateable:false,\n\tupsertable:false,\n\tformat: 'table',\n\tmapColumn(\n\t\trecord_type_code,\n\t\ttransaction_type,\n\t\tetc_entry_date,\n\t\tetc_entry_time,\n\t\tetc_entry_plaza_id,\n\t\tetc_entry_lane,\n\t\tetc_entry_data_source,\n\t\tFILE_NAME = file_name\n\t),\n\tskipDuplicateMapInputs: true,\n\tskipDuplicateMapOutputs: true) ~> writeToDB"
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/TxnFileDataSet')]",
+				"[concat(variables('factoryId'), '/datasets/TxnDBDataSet')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/LocalFileSuccessOut')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "[parameters('nystalinkedsvc')]",
+					"type": "LinkedServiceReference"
+				},
+				"annotations": [],
+				"type": "Binary",
+				"typeProperties": {
+					"location": {
+						"type": "AzureBlobStorageLocation",
+						"folderPath": "archive",
+						"container": "adfnysta"
+					}
+				}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/LocalFileErrorOut')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "[parameters('nystalinkedsvc')]",
+					"type": "LinkedServiceReference"
+				},
+				"annotations": [],
+				"type": "Binary",
+				"typeProperties": {
+					"location": {
+						"type": "AzureBlobStorageLocation",
+						"folderPath": "error",
+						"container": "adfnysta"
+					}
+				}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/TxnFileDataSet')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "[parameters('nystalinkedsvc')]",
+					"type": "LinkedServiceReference"
+				},
+				"parameters": {
+					"fileName": {
+						"type": "string",
+						"defaultValue": "FileName"
+					}
+				},
+				"annotations": [],
+				"type": "DelimitedText",
+				"typeProperties": {
+					"location": {
+						"type": "AzureBlobStorageLocation",
+						"fileName": {
+							"value": "@dataset().fileName",
+							"type": "Expression"
+						},
+						"folderPath": "input",
+						"container": "adfnysta"
+					},
+					"columnDelimiter": "",
+					"escapeChar": "\\",
+					"quoteChar": "\""
+				},
+				"schema": [
+					{
+						"type": "String"
+					}
+				]
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/TxnDBDataSet')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "[parameters('dblinkedsvc')]",
+					"type": "LinkedServiceReference"
+				},
+				"annotations": [],
+				"type": "AzureSqlTable",
+				"schema": [
+					{
+						"name": "record_type_code",
+						"type": "varchar"
+					},
+					{
+						"name": "transaction_type",
+						"type": "varchar"
+					},
+					{
+						"name": "etc_entry_date",
+						"type": "varchar"
+					},
+					{
+						"name": "etc_entry_time",
+						"type": "varchar"
+					},
+					{
+						"name": "etc_entry_plaza_id",
+						"type": "varchar"
+					},
+					{
+						"name": "etc_entry_lane",
+						"type": "varchar"
+					},
+					{
+						"name": "etc_entry_data_source",
+						"type": "varchar"
+					},
+					{
+						"name": "FILE_NAME",
+						"type": "varchar"
+					}
+				],
+				"typeProperties": {
+					"schema": "dbo",
+					"table": "NYSTA_TXN_DTL"
+				}
+			},
+			"dependsOn": []
+		}
+	]
+}
