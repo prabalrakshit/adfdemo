@@ -1,0 +1,32 @@
+{
+	"name": "writeRecordsToDB",
+	"properties": {
+		"type": "MappingDataFlow",
+		"typeProperties": {
+			"sources": [
+				{
+					"dataset": {
+						"referenceName": "TxnFileDataSet",
+						"type": "DatasetReference"
+					},
+					"name": "readLocalFile"
+				}
+			],
+			"sinks": [
+				{
+					"dataset": {
+						"referenceName": "TxnDBDataSet",
+						"type": "DatasetReference"
+					},
+					"name": "writeToDB"
+				}
+			],
+			"transformations": [
+				{
+					"name": "mapFileData"
+				}
+			],
+			"script": "parameters{\n\tfileNameDataFlowParam as string\n}\nsource(output(\n\t\tColumn_1 as string\n\t),\n\tallowSchemaDrift: true,\n\tvalidateSchema: false) ~> readLocalFile\nreadLocalFile derive(record_type_code = substring(Column_1, 1, 1),\n\t\ttransaction_type = substring(Column_1, 2, 1),\n\t\tetc_entry_date = substring(Column_1, 3, 8),\n\t\tetc_entry_time = substring(Column_1, 11, 8),\n\t\tetc_entry_plaza_id = substring(Column_1, 19, 3),\n\t\tetc_entry_lane = substring(Column_1, 22, 3),\n\t\tetc_entry_data_source = substring(Column_1, 25, 1),\n\t\tfile_name = $fileNameDataFlowParam) ~> mapFileData\nmapFileData sink(input(\n\t\trecord_type_code as string,\n\t\ttransaction_type as string,\n\t\tetc_entry_date as string,\n\t\tetc_entry_time as string,\n\t\tetc_entry_plaza_id as string,\n\t\tetc_entry_lane as string,\n\t\tetc_entry_data_source as string,\n\t\tFILE_NAME as string\n\t),\n\tallowSchemaDrift: true,\n\tvalidateSchema: false,\n\tdeletable:false,\n\tinsertable:true,\n\tupdateable:false,\n\tupsertable:false,\n\tformat: 'table',\n\tmapColumn(\n\t\trecord_type_code,\n\t\ttransaction_type,\n\t\tetc_entry_date,\n\t\tetc_entry_time,\n\t\tetc_entry_plaza_id,\n\t\tetc_entry_lane,\n\t\tetc_entry_data_source,\n\t\tFILE_NAME = file_name\n\t),\n\tskipDuplicateMapInputs: true,\n\tskipDuplicateMapOutputs: true) ~> writeToDB"
+		}
+	}
+}

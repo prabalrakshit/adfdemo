@@ -1,0 +1,13 @@
+{
+	"name": "dblinkedsvc",
+	"type": "Microsoft.DataFactory/factories/linkedservices",
+	"properties": {
+		"description": "Linked Service for Azure SQL DB",
+		"annotations": [],
+		"type": "AzureSqlDatabase",
+		"typeProperties": {
+			"connectionString": "integrated security=False;encrypt=True;connection timeout=30;data source=demo-dql-svr.database.windows.net;initial catalog=demo-sql-db;user id=azureuser",
+			"encryptedCredential": "ew0KICAiVmVyc2lvbiI6ICIyMDE3LTExLTMwIiwNCiAgIlByb3RlY3Rpb25Nb2RlIjogIktleSIsDQogICJTZWNyZXRDb250ZW50VHlwZSI6ICJQbGFpbnRleHQiLA0KICAiQ3JlZGVudGlhbElkIjogIkFERk5ZU1RBXzU0OTgwYjg4LThkZWQtNDM0OC1iZjZlLTM1ZmQ2Mzg4ZDlhNyINCn0="
+		}
+	}
+}

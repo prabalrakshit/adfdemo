@@ -1,0 +1,19 @@
+{
+	"name": "LocalFileErrorOut",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "nystalinkedsvc",
+			"type": "LinkedServiceReference"
+		},
+		"annotations": [],
+		"type": "Binary",
+		"typeProperties": {
+			"location": {
+				"type": "AzureBlobStorageLocation",
+				"folderPath": "error",
+				"container": "adfnysta"
+			}
+		}
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

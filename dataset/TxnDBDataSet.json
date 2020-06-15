@@ -1,0 +1,50 @@
+{
+	"name": "TxnDBDataSet",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "dblinkedsvc",
+			"type": "LinkedServiceReference"
+		},
+		"annotations": [],
+		"type": "AzureSqlTable",
+		"schema": [
+			{
+				"name": "record_type_code",
+				"type": "varchar"
+			},
+			{
+				"name": "transaction_type",
+				"type": "varchar"
+			},
+			{
+				"name": "etc_entry_date",
+				"type": "varchar"
+			},
+			{
+				"name": "etc_entry_time",
+				"type": "varchar"
+			},
+			{
+				"name": "etc_entry_plaza_id",
+				"type": "varchar"
+			},
+			{
+				"name": "etc_entry_lane",
+				"type": "varchar"
+			},
+			{
+				"name": "etc_entry_data_source",
+				"type": "varchar"
+			},
+			{
+				"name": "FILE_NAME",
+				"type": "varchar"
+			}
+		],
+		"typeProperties": {
+			"schema": "dbo",
+			"table": "NYSTA_TXN_DTL"
+		}
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

@@ -1,0 +1,19 @@
+{
+	"name": "LocalFileIn",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "nystalinkedsvc",
+			"type": "LinkedServiceReference"
+		},
+		"annotations": [],
+		"type": "Binary",
+		"typeProperties": {
+			"location": {
+				"type": "AzureBlobStorageLocation",
+				"folderPath": "input",
+				"container": "adfnysta"
+			}
+		}
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}
