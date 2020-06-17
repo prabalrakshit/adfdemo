@@ -27,8 +27,8 @@
 			"properties": {
 				"activities": [
 					{
-						"name": "readRemoteFile",
-						"type": "Copy",
+						"name": "Get All Remote Files",
+						"type": "GetMetadata",
 						"dependsOn": [],
 						"policy": {
 							"timeout": "7.00:00:00",
@@ -39,69 +39,20 @@
 						},
 						"userProperties": [],
 						"typeProperties": {
-							"source": {
-								"type": "BinarySource",
-								"storeSettings": {
-									"type": "SftpReadSettings",
-									"recursive": true,
-									"wildcardFileName": "*.txt"
-								},
-								"formatSettings": {
-									"type": "BinaryReadSettings"
-								}
-							},
-							"sink": {
-								"type": "BinarySink",
-								"storeSettings": {
-									"type": "AzureBlobStorageWriteSettings"
-								}
-							},
-							"enableStaging": false
-						},
-						"inputs": [
-							{
-								"referenceName": "RemoteFileIn",
-								"type": "DatasetReference"
-							}
-						],
-						"outputs": [
-							{
-								"referenceName": "LocalFileIn",
-								"type": "DatasetReference"
-							}
-						]
-					},
-					{
-						"name": "getMetadata",
-						"type": "GetMetadata",
-						"dependsOn": [
-							{
-								"activity": "readRemoteFile",
-								"dependencyConditions": [
-									"Succeeded"
-								]
-							}
-						],
-						"policy": {
-							"timeout": "7.00:00:00",
-							"retry": 0,
-							"retryIntervalInSeconds": 30,
-							"secureOutput": false,
-							"secureInput": false
-						},
-						"userProperties": [],
-						"typeProperties": {
 							"dataset": {
-								"referenceName": "LocalFileIn",
-								"type": "DatasetReference"
+								"referenceName": "RemoteFileIn",
+								"type": "DatasetReference",
+								"parameters": {
+									"fileName": "*"
+								}
 							},
 							"fieldList": [
+								"childItems",
 								"itemName",
-								"itemType",
-								"childItems"
+								"itemType"
 							],
 							"storeSettings": {
-								"type": "AzureBlobStorageReadSettings",
+								"type": "SftpReadSettings",
 								"recursive": true
 							},
 							"formatSettings": {
@@ -110,11 +61,11 @@
 						}
 					},
 					{
-						"name": "forEachFile",
-						"type": "ForEach",
+						"name": "Get Check Files Only",
+						"type": "Filter",
 						"dependsOn": [
 							{
-								"activity": "getMetadata",
+								"activity": "Get All Remote Files",
 								"dependencyConditions": [
 									"Succeeded"
 								]
@@ -123,15 +74,58 @@
 						"userProperties": [],
 						"typeProperties": {
 							"items": {
-								"value": "@activity('getMetadata').output.childItems",
+								"value": "@activity('Get All Remote Files').output.childItems",
+								"type": "Expression"
+							},
+							"condition": {
+								"value": "@endswith(item().name,'.CHK')",
+								"type": "Expression"
+							}
+						}
+					},
+					{
+						"name": "For Each Check File",
+						"type": "ForEach",
+						"dependsOn": [
+							{
+								"activity": "Get Check Files Only",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"items": {
+								"value": "@activity('Get Check Files Only').output.Value",
 								"type": "Expression"
 							},
 							"isSequential": true,
 							"activities": [
 								{
-									"name": "writeRecordsToDB",
-									"type": "ExecuteDataFlow",
+									"name": "Set TRX File Name",
+									"type": "SetVariable",
 									"dependsOn": [],
+									"userProperties": [],
+									"typeProperties": {
+										"variableName": "trxFileName",
+										"value": {
+											"value": "@replace(item().name,'_TRX.CHK','.TRX')",
+											"type": "Expression"
+										}
+									}
+								},
+								{
+									"name": "Write Records To DB",
+									"type": "ExecuteDataFlow",
+									"dependsOn": [
+										{
+											"activity": "Download TRX File",
+											"dependencyConditions": [
+												"Succeeded"
+											]
+										}
+									],
 									"policy": {
 										"timeout": "7.00:00:00",
 										"retry": 0,
@@ -146,14 +140,14 @@
 											"type": "DataFlowReference",
 											"parameters": {
 												"fileNameDataFlowParam": {
-													"value": "'@{item().name}'",
+													"value": "'@{variables('trxFileName')}'",
 													"type": "Expression"
 												}
 											},
 											"datasetParameters": {
 												"readLocalFile": {
 													"fileName": {
-														"value": "@item().name",
+														"value": "@variables('trxFileName')",
 														"type": "Expression"
 													}
 												}
@@ -166,11 +160,11 @@
 									}
 								},
 								{
-									"name": "archiveOnSuccess",
+									"name": "Archive on Success",
 									"type": "Copy",
 									"dependsOn": [
 										{
-											"activity": "writeRecordsToDB",
+											"activity": "Write Records To DB",
 											"dependencyConditions": [
 												"Succeeded"
 											]
@@ -206,22 +200,34 @@
 									"inputs": [
 										{
 											"referenceName": "LocalFileIn",
-											"type": "DatasetReference"
+											"type": "DatasetReference",
+											"parameters": {
+												"fileName": {
+													"value": "@variables('trxFileName')",
+													"type": "Expression"
+												}
+											}
 										}
 									],
 									"outputs": [
 										{
 											"referenceName": "LocalFileSuccessOut",
-											"type": "DatasetReference"
+											"type": "DatasetReference",
+											"parameters": {
+												"fileName": {
+													"value": "@variables('trxFileName')",
+													"type": "Expression"
+												}
+											}
 										}
 									]
 								},
 								{
-									"name": "archiveOnFailure",
+									"name": "Archive on Failure",
 									"type": "Copy",
 									"dependsOn": [
 										{
-											"activity": "writeRecordsToDB",
+											"activity": "Write Records To DB",
 											"dependencyConditions": [
 												"Failed"
 											]
@@ -257,13 +263,88 @@
 									"inputs": [
 										{
 											"referenceName": "LocalFileIn",
-											"type": "DatasetReference"
+											"type": "DatasetReference",
+											"parameters": {
+												"fileName": {
+													"value": "@variables('trxFileName')",
+													"type": "Expression"
+												}
+											}
 										}
 									],
 									"outputs": [
 										{
 											"referenceName": "LocalFileErrorOut",
-											"type": "DatasetReference"
+											"type": "DatasetReference",
+											"parameters": {
+												"fileName": {
+													"value": "@variables('trxFileName')",
+													"type": "Expression"
+												}
+											}
+										}
+									]
+								},
+								{
+									"name": "Download TRX File",
+									"type": "Copy",
+									"dependsOn": [
+										{
+											"activity": "Set TRX File Name",
+											"dependencyConditions": [
+												"Succeeded"
+											]
+										}
+									],
+									"policy": {
+										"timeout": "7.00:00:00",
+										"retry": 0,
+										"retryIntervalInSeconds": 30,
+										"secureOutput": false,
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"source": {
+											"type": "BinarySource",
+											"storeSettings": {
+												"type": "SftpReadSettings",
+												"recursive": true
+											},
+											"formatSettings": {
+												"type": "BinaryReadSettings"
+											}
+										},
+										"sink": {
+											"type": "BinarySink",
+											"storeSettings": {
+												"type": "AzureBlobStorageWriteSettings"
+											}
+										},
+										"enableStaging": false
+									},
+									"inputs": [
+										{
+											"referenceName": "RemoteFileIn",
+											"type": "DatasetReference",
+											"parameters": {
+												"fileName": {
+													"value": "@variables('trxFileName')",
+													"type": "Expression"
+												}
+											}
+										}
+									],
+									"outputs": [
+										{
+											"referenceName": "LocalFileIn",
+											"type": "DatasetReference",
+											"parameters": {
+												"fileName": {
+													"value": "@variables('trxFileName')",
+													"type": "Expression"
+												}
+											}
 										}
 									]
 								}
@@ -271,12 +352,17 @@
 						}
 					}
 				],
+				"variables": {
+					"trxFileName": {
+						"type": "String"
+					}
+				},
 				"annotations": []
 			},
 			"dependsOn": [
 				"[concat(variables('factoryId'), '/datasets/RemoteFileIn')]",
-				"[concat(variables('factoryId'), '/datasets/LocalFileIn')]",
 				"[concat(variables('factoryId'), '/dataflows/writeRecordsToDB')]",
+				"[concat(variables('factoryId'), '/datasets/LocalFileIn')]",
 				"[concat(variables('factoryId'), '/datasets/LocalFileSuccessOut')]",
 				"[concat(variables('factoryId'), '/datasets/LocalFileErrorOut')]"
 			]
@@ -290,33 +376,17 @@
 					"referenceName": "[parameters('sftplinkedsvc')]",
 					"type": "LinkedServiceReference"
 				},
+				"parameters": {
+					"fileName": {
+						"type": "string"
+					}
+				},
 				"annotations": [],
 				"type": "Binary",
 				"typeProperties": {
 					"location": {
 						"type": "SftpLocation",
 						"folderPath": "/home/azureuser/nystatxnin"
-					}
-				}
-			},
-			"dependsOn": []
-		},
-		{
-			"name": "[concat(parameters('factoryName'), '/LocalFileIn')]",
-			"type": "Microsoft.DataFactory/factories/datasets",
-			"apiVersion": "2018-06-01",
-			"properties": {
-				"linkedServiceName": {
-					"referenceName": "[parameters('nystalinkedsvc')]",
-					"type": "LinkedServiceReference"
-				},
-				"annotations": [],
-				"type": "Binary",
-				"typeProperties": {
-					"location": {
-						"type": "AzureBlobStorageLocation",
-						"folderPath": "input",
-						"container": "adfnysta"
 					}
 				}
 			},
@@ -361,6 +431,32 @@
 			]
 		},
 		{
+			"name": "[concat(parameters('factoryName'), '/LocalFileIn')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "[parameters('nystalinkedsvc')]",
+					"type": "LinkedServiceReference"
+				},
+				"parameters": {
+					"fileName": {
+						"type": "string"
+					}
+				},
+				"annotations": [],
+				"type": "Binary",
+				"typeProperties": {
+					"location": {
+						"type": "AzureBlobStorageLocation",
+						"folderPath": "input",
+						"container": "adfnysta"
+					}
+				}
+			},
+			"dependsOn": []
+		},
+		{
 			"name": "[concat(parameters('factoryName'), '/LocalFileSuccessOut')]",
 			"type": "Microsoft.DataFactory/factories/datasets",
 			"apiVersion": "2018-06-01",
@@ -368,6 +464,11 @@
 				"linkedServiceName": {
 					"referenceName": "[parameters('nystalinkedsvc')]",
 					"type": "LinkedServiceReference"
+				},
+				"parameters": {
+					"fileName": {
+						"type": "string"
+					}
 				},
 				"annotations": [],
 				"type": "Binary",
@@ -389,6 +490,11 @@
 				"linkedServiceName": {
 					"referenceName": "[parameters('nystalinkedsvc')]",
 					"type": "LinkedServiceReference"
+				},
+				"parameters": {
+					"fileName": {
+						"type": "string"
+					}
 				},
 				"annotations": [],
 				"type": "Binary",
